@@ -1,0 +1,182 @@
+#!/usr/bin/env ruby
+
+#  ffpref - a utility to read and manipulate firefox preferences
+
+if ARGV.empty?
+  puts "Firefox preference file editor"
+  puts ""
+  puts "Usage:\tffpref [-f file] [-get | -delete] <pref name>"
+  puts "\tffpref [-f file] -readall"
+  puts ""
+  puts "\tffpref [-f file] -set <pref name> [-int | -string | -bool] <value>"
+  puts "\n\t----\n\n"
+  puts "\t-f:\tPath to a specific Firefox profile prefs.js file. Defaults to the current user's firefox profile."
+  puts "\t\tThis option has a magic word of 'template' to specify the English user template folder."
+  puts "\t\tYou can also send a username to narrow the scope to the FF profiles in that user's home folder."
+  puts ""
+  exit
+end
+
+def validate_pref_name(s)
+  if s.nil? || s[0,1] == "-"
+    puts "Invalid preference name provided"
+    exit
+  end
+end
+
+def validate_and_return_type(s)
+  case s
+  when "int", "integer"
+    return "int"
+  when "str" || "string"
+    return "str"
+  when "bool" || "boolean"
+    return "bool"
+  else
+    puts "Invalid type value provided"
+    exit
+  end
+end
+
+def validate_file_name(s=nil)
+  firefox_home = case s
+  when nil
+    File.expand_path("~/Library/Application Support/Firefox/Profiles")
+  when "template"
+    File.expand_path("/System/Library/User Template/English.lproj/Library/Application Support/Firefox/Profiles")
+  when File.directory? ("/Users/#{s}")
+    File.expand_path("/Users/#{s}/Library/Application Support/Firefox/Profiles")
+  else s
+  end
+  
+    profile = Dir.entries(firefox_home).map { |f| f unless f =~ /^\./ }.compact
+    filename = File.join(firefox_home, profile, "prefs.js")
+    rescue Errno::ENOENT
+      rescue Errno::EACCES
+      
+  if File.exists?( filename )
+    return filename
+  else
+    puts "File #{filename} does not exist"
+    exit
+  end
+end
+
+
+set = false
+get = false
+delete = false
+readall = false
+prefname = nil
+typename = nil
+filename = nil
+value = nil
+
+skip_next_arg = false
+
+ARGV.each_with_index do |a,i|  
+  if skip_next_arg
+    skip_next_arg = false
+    next
+  end
+  
+  case a
+  when "-s", "-set", "--set"
+    set = true
+    validate_pref_name(ARGV[i+1])
+    skip_next_arg = true
+    prefname = ARGV[i+1]
+        
+  when "-g", "-get", "--get"
+    get = true
+    validate_pref_name(ARGV[i+1])
+    skip_next_arg = true
+    prefname = ARGV[i+1]
+        
+  when "-d", "-del", "--del", "-delete", "--delete"
+    delete = true
+    validate_pref_name(ARGV[i+1])
+    skip_next_arg = true
+    prefname = ARGV[i+1]
+    
+  when "-int", "-integer", "-str", "-string", "-bool", "-boolean"
+    type = true
+    typename = validate_and_return_type(ARGV[i][1,7])
+    
+  when "-f", "-file", "--file"
+    filename = ARGV[i+1]
+    skip_next_arg = true
+    
+  when "-r", "-read", "--read"
+    readall = true
+    
+  else
+    value = a
+  end
+end
+
+if value.nil? && set
+  puts "No preference value provided"
+  exit
+end
+
+filename = validate_file_name(filename)
+
+if set
+  # setting code here
+  
+  ## Set default value type
+  if typename.nil?
+    typename = "str"
+  end
+  
+  text = File.read(filename)
+  if text.match /user_pref\("#{prefname}", .*\);/
+    if typename == "str"
+      text.gsub!( /user_pref\("#{prefname}", .*\);/, "user_pref(\"#{prefname}\", \"#{value}\");" )
+    else
+      text.gsub!( /user_pref\("#{prefname}", .*\);/, "user_pref(\"#{prefname}\", #{value});" )
+    end
+    puts "Successfully updated the preference \"#{prefname}\"."
+  else
+    if typename == "str"
+      text << "user_pref(\"#{prefname}\", \"#{value}\");"
+    else
+      text << "user_pref(\"#{prefname}\", #{value});"
+    end
+    puts "Successfully added the preference \"#{prefname}\"."
+  end
+  File.open(filename, "w").puts(text)
+
+elsif get
+  # getting code here
+  
+  text = File.read(filename)
+  match = text.match(/user_pref\("#{prefname}", (.*)\);/)
+  if match
+    puts match[1]
+  else  
+    puts "The #{prefname} preference doesn't exist"
+  end
+  
+elsif delete
+  
+  text = File.read(filename)
+  text.gsub!( /user_pref\("#{prefname}", .*\);\n/, "" )
+  puts "Successfully deleted the preference \"#{prefname}\"."
+  File.open(filename, "w").puts(text)
+  
+elsif readall
+  # output all code here
+  all_prefs = []
+  
+  File.open(filename).each_line do |line|
+    match = line.match(/user_pref\("(.*)", (.*)\);/)
+    if match
+      puts "#{match[1]} = #{match[2]}"
+    end
+  end
+end
+
+
+
